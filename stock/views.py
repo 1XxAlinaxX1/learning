@@ -1,11 +1,9 @@
 from django.shortcuts import render, get_object_or_404, redirect
-
+from django.contrib.auth.decorators import login_required
 from stock.models import Stock, AccountCurrency, AccountStock
 from stock.forms import BuySellForm
-
-from django.contrib.auth.decorators import login_required
-
 from django.core.cache import cache
+
 
 def stock_list(request):
     stocks = Stock.objects.all()
@@ -64,9 +62,6 @@ def stock_buy(request, pk):
 
     return render(request, 'stock.html', context)
 
-
-
-
 @login_required
 def stock_sell(request, pk):
     if request.method != "POST":
@@ -82,34 +77,29 @@ def stock_sell(request, pk):
 
         acc_stock, created = AccountStock.objects.get_or_create(account=request.user.account, stock=stock,
                                                                 defaults={'average_sell_cost': 0, 'amount': 0})
-        current_cost = acc_stock.amount
+        current_cost = acc_stock.average_sell_cost * acc_stock.amount
 
-        total_cost = current_cost - sell_cost
-        total_amount = acc_stock.amount + amount
-
-        acc_stock.amount = total_amount
+        total_cost = current_cost + sell_cost
 
         acc_currency, created = AccountCurrency.objects.get_or_create(account=request.user.account, currency=stock.currency,
-                                                                      defaults={'amount': 0})
-
-        if acc_currency.amount < sell_cost:
-            form.add_error(None, f'На счёте недостаточно средств в валюте {stock.currency.sign}')
+                                                                    defaults={'amount': 0})
+        if acc_stock.amount < amount:
+            form.add_error(None, f'Вы не можете продать {amount} акций, так как на вашем счету их меньше')
         else:
-            acc_currency.amount = acc_currency.amount + sell_cost
+            total_amount = acc_stock.amount - amount
+            acc_stock.amount = total_amount
+            acc_currency.amount = acc_currency.amount + sell_cost            
             acc_stock.save()
             acc_currency.save()
             return redirect('stock:list')
-
+    
     context = {
         'stock': get_object_or_404(Stock, pk=pk),
         'form': form
     }
 
     return render(request, 'stock.html', context)
-
-
-
-
+    
 @login_required
 def account(request):
     currencies = cache.get(f'currencies_{request.user.username}')
@@ -141,5 +131,3 @@ def account(request):
     }
 
     return render(request, template_name='account.html', context=context)
-
-
